@@ -1,15 +1,16 @@
 
 #include "SDL.h"
-#include "SDL_render.h"
 
-#include "avcodec.h"
-#include "frame.h"
-#include "rational.h"
+
+#include "libavformat/avformat.h"
+#include "libavcodec/avcodec.h"
+#include "libavutil/frame.h"
+#include "libavutil/rational.h"
 
 #ifndef _BRUCE_PLAYER_H
 #define _BRUCE_PLAYER_H
 
-#define CONFIG_AVFILTER 0
+#define RDFT 0
 
 
 #define FFMAX(a,b) ((a) > (b) ? (a) : (b))
@@ -255,9 +256,13 @@ typedef struct VideoState {
     int16_t sample_array[SAMPLE_ARRAY_SIZE];
     int sample_array_index;
     int last_i_start;
+
+#if RDFT
     RDFTContext *rdft;
     int rdft_bits;
     FFTSample *rdft_data;
+#endif
+
     int xpos;
     double last_vis_time;
     SDL_Texture *vis_texture;
@@ -303,17 +308,5 @@ static inline int compute_mod(int a, int b)
 {
     return a < 0 ? a%b + b : a%b;
 }
-
-static inline void fill_rectangle(int x, int y, int w, int h)
-{
-    SDL_Rect rect;
-    rect.x = x;
-    rect.y = y;
-    rect.w = w;
-    rect.h = h;
-    if (w && h)
-        SDL_RenderFillRect(renderer, &rect);
-}
-
 
 #endif

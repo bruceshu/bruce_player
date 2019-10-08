@@ -157,7 +157,7 @@ double parse_number_or_die(const char *context, const char *numstr, int type,
         error = "Expected int for %s but found %s\n";
     else
         return d;
-    av_log(NULL, AV_LOG_FATAL, error, context, numstr, min, max);
+    //av_log(NULL, AV_LOG_FATAL, error, context, numstr, min, max);
     exit_program(1);
     return 0;
 }
@@ -167,8 +167,8 @@ int64_t parse_time_or_die(const char *context, const char *timestr,
 {
     int64_t us;
     if (av_parse_time(&us, timestr, is_duration) < 0) {
-        av_log(NULL, AV_LOG_FATAL, "Invalid %s specification for %s: %s\n",
-               is_duration ? "duration" : "date", context, timestr);
+        //av_log(NULL, AV_LOG_FATAL, "Invalid %s specification for %s: %s\n",
+               //is_duration ? "duration" : "date", context, timestr);
         exit_program(1);
     }
     return us;
@@ -292,6 +292,7 @@ static inline void prepare_app_arguments(int *argc_ptr, char ***argv_ptr)
 }
 #endif /* HAVE_COMMANDLINETOARGVW */
 
+//if 0 //暂时没用到
 static int write_option(void *optctx, const OptionDef *po, const char *opt,
                         const char *arg)
 {
@@ -335,11 +336,14 @@ static int write_option(void *optctx, const OptionDef *po, const char *opt,
     } else if (po->u.func_arg) {
         int ret = po->u.func_arg(optctx, opt, arg);
         if (ret < 0) {
+        /*
             av_log(NULL, AV_LOG_ERROR,
                    "Failed to set value '%s' for option '%s': %s\n",
                    arg, opt, av_err2str(ret));
+                    */
             return ret;
         }
+       
     }
     if (po->flags & OPT_EXIT)
         exit_program(0);
@@ -365,11 +369,11 @@ int parse_option(void *optctx, const char *opt, const char *arg,
     if (!po->name)
         po = find_option(options, "default");
     if (!po->name) {
-        av_log(NULL, AV_LOG_ERROR, "Unrecognized option '%s'\n", opt);
+        //av_log(NULL, AV_LOG_ERROR, "Unrecognized option '%s'\n", opt);
         return AVERROR(EINVAL);
     }
     if (po->flags & HAS_ARG && !arg) {
-        av_log(NULL, AV_LOG_ERROR, "Missing argument for option '%s'\n", opt);
+        //av_log(NULL, AV_LOG_ERROR, "Missing argument for option '%s'\n", opt);
         return AVERROR(EINVAL);
     }
 
@@ -415,31 +419,31 @@ int parse_optgroup(void *optctx, OptionGroup *g)
 {
     int i, ret;
 
-    av_log(NULL, AV_LOG_DEBUG, "Parsing a group of options: %s %s.\n",
-           g->group_def->name, g->arg);
+    //av_log(NULL, AV_LOG_DEBUG, "Parsing a group of options: %s %s.\n",
+           //g->group_def->name, g->arg);
 
     for (i = 0; i < g->nb_opts; i++) {
         Option *o = &g->opts[i];
 
         if (g->group_def->flags &&
             !(g->group_def->flags & o->opt->flags)) {
-            av_log(NULL, AV_LOG_ERROR, "Option %s (%s) cannot be applied to "
-                   "%s %s -- you are trying to apply an input option to an "
-                   "output file or vice versa. Move this option before the "
-                   "file it belongs to.\n", o->key, o->opt->help,
-                   g->group_def->name, g->arg);
+            //av_log(NULL, AV_LOG_ERROR, "Option %s (%s) cannot be applied to "
+                   //"%s %s -- you are trying to apply an input option to an "
+                   //"output file or vice versa. Move this option before the "
+                   //"file it belongs to.\n", o->key, o->opt->help,
+                   //g->group_def->name, g->arg);
             return AVERROR(EINVAL);
         }
 
-        av_log(NULL, AV_LOG_DEBUG, "Applying option %s (%s) with argument %s.\n",
-               o->key, o->opt->help, o->val);
+        //av_log(NULL, AV_LOG_DEBUG, "Applying option %s (%s) with argument %s.\n",
+               //o->key, o->opt->help, o->val);
 
         ret = write_option(optctx, o->opt, o->key, o->val);
         if (ret < 0)
             return ret;
     }
 
-    av_log(NULL, AV_LOG_DEBUG, "Successfully parsed a group of options.\n");
+    //av_log(NULL, AV_LOG_DEBUG, "Successfully parsed a group of options.\n");
 
     return 0;
 }
@@ -577,7 +581,7 @@ int opt_default(void *optctx, const char *opt, const char *arg)
                          AV_OPT_SEARCH_CHILDREN | AV_OPT_SEARCH_FAKE_OBJ))) {
         av_dict_set(&format_opts, opt, arg, FLAGS);
         if (consumed)
-            av_log(NULL, AV_LOG_VERBOSE, "Routing option %s to both codec and muxer layer\n", opt);
+            //av_log(NULL, AV_LOG_VERBOSE, "Routing option %s to both codec and muxer layer\n", opt);
         consumed = 1;
     }
 #if CONFIG_SWSCALE
@@ -589,11 +593,11 @@ int opt_default(void *optctx, const char *opt, const char *arg)
         if (!strcmp(opt, "srcw") || !strcmp(opt, "srch") ||
             !strcmp(opt, "dstw") || !strcmp(opt, "dsth") ||
             !strcmp(opt, "src_format") || !strcmp(opt, "dst_format")) {
-            av_log(NULL, AV_LOG_ERROR, "Directly using swscale dimensions/format options is not supported, please use the -s or -pix_fmt options\n");
+            //av_log(NULL, AV_LOG_ERROR, "Directly using swscale dimensions/format options is not supported, please use the -s or -pix_fmt options\n");
             return AVERROR(EINVAL);
         }
         if (ret < 0) {
-            av_log(NULL, AV_LOG_ERROR, "Error setting option %s.\n", opt);
+            //av_log(NULL, AV_LOG_ERROR, "Error setting option %s.\n", opt);
             return ret;
         }
 
@@ -603,7 +607,7 @@ int opt_default(void *optctx, const char *opt, const char *arg)
     }
 #else
     if (!consumed && !strcmp(opt, "sws_flags")) {
-        av_log(NULL, AV_LOG_WARNING, "Ignoring %s %s, due to disabled swscale\n", opt, arg);
+        //av_log(NULL, AV_LOG_WARNING, "Ignoring %s %s, due to disabled swscale\n", opt, arg);
         consumed = 1;
     }
 #endif
@@ -614,7 +618,7 @@ int opt_default(void *optctx, const char *opt, const char *arg)
         int ret = av_opt_set(swr, opt, arg, 0);
         swr_free(&swr);
         if (ret < 0) {
-            av_log(NULL, AV_LOG_ERROR, "Error setting option %s.\n", opt);
+            //av_log(NULL, AV_LOG_ERROR, "Error setting option %s.\n", opt);
             return ret;
         }
         av_dict_set(&swr_opts, opt, arg, FLAGS);
@@ -761,14 +765,14 @@ int split_commandline(OptionParseContext *octx, int argc, char *argv[],
     prepare_app_arguments(&argc, &argv);
 
     init_parse_context(octx, groups, nb_groups);
-    av_log(NULL, AV_LOG_DEBUG, "Splitting the commandline.\n");
+    //av_log(NULL, AV_LOG_DEBUG, "Splitting the commandline.\n");
 
     while (optindex < argc) {
         const char *opt = argv[optindex++], *arg;
         const OptionDef *po;
         int ret;
 
-        av_log(NULL, AV_LOG_DEBUG, "Reading option '%s' ...", opt);
+        //av_log(NULL, AV_LOG_DEBUG, "Reading option '%s' ...", opt);
 
         if (opt[0] == '-' && opt[1] == '-' && !opt[2]) {
             dashdash = optindex;
@@ -777,7 +781,7 @@ int split_commandline(OptionParseContext *octx, int argc, char *argv[],
         /* unnamed group separators, e.g. output filename */
         if (opt[0] != '-' || !opt[1] || dashdash+1 == optindex) {
             finish_group(octx, 0, opt);
-            av_log(NULL, AV_LOG_DEBUG, " matched as %s.\n", groups[0].name);
+            //av_log(NULL, AV_LOG_DEBUG, " matched as %s.\n", groups[0].name);
             continue;
         }
         opt++;
@@ -786,7 +790,7 @@ int split_commandline(OptionParseContext *octx, int argc, char *argv[],
 do {                                                                           \
     arg = argv[optindex++];                                                    \
     if (!arg) {                                                                \
-        av_log(NULL, AV_LOG_ERROR, "Missing argument for option '%s'.\n", opt);\
+        //av_log(NULL, AV_LOG_ERROR, "Missing argument for option '%s'.\n", opt);\
         return AVERROR(EINVAL);                                                \
     }                                                                          \
 } while (0)
@@ -795,8 +799,8 @@ do {                                                                           \
         if ((ret = match_group_separator(groups, nb_groups, opt)) >= 0) {
             GET_ARG(arg);
             finish_group(octx, ret, arg);
-            av_log(NULL, AV_LOG_DEBUG, " matched as %s with argument '%s'.\n",
-                   groups[ret].name, arg);
+            //av_log(NULL, AV_LOG_DEBUG, " matched as %s with argument '%s'.\n",
+                   //groups[ret].name, arg);
             continue;
         }
 
@@ -813,8 +817,7 @@ do {                                                                           \
             }
 
             add_opt(octx, po, opt, arg);
-            av_log(NULL, AV_LOG_DEBUG, " matched as option '%s' (%s) with "
-                   "argument '%s'.\n", po->name, po->help, arg);
+            //av_log(NULL, AV_LOG_DEBUG, " matched as option '%s' (%s) with argument '%s'.\n", po->name, po->help, arg);
             continue;
         }
 
@@ -2078,8 +2081,8 @@ FILE *get_preset_file(char *filename, size_t filename_size,
 int check_stream_specifier(AVFormatContext *s, AVStream *st, const char *spec)
 {
     int ret = avformat_match_stream_specifier(s, st, spec);
-    if (ret < 0)
-        av_log(s, AV_LOG_ERROR, "Invalid stream specifier: %s.\n", spec);
+    //if (ret < 0)
+        //av_log(s, AV_LOG_ERROR, "Invalid stream specifier: %s.\n", spec);
     return ret;
 }
 

@@ -1,7 +1,14 @@
 #include <signal.h>
 #include <stdio.h>
 
+#include "libswscale/swscale.h"
+
+#include "libavutil/time.h"
+
+#include "libswresample/swresample.h"
+
 #include "bruce_player.h"
+#include "utils/cmdutils.h"
 
 const char program_name[] = "ffplay";
 
@@ -18,7 +25,7 @@ static char *afilters = NULL;
 #endif
 
 static AVPacket flush_pkt;
-static AVFormatContext *file_iformat = NULL;
+static AVInputFormat *file_iformat = NULL;
 
 //播放参数
 static int startup_volume = 100;
@@ -36,6 +43,10 @@ static int infinite_buffer = -1;
 static int loop = 1;
 static int autoexit = 0;
 static int lowres = 0;
+
+static const char *audio_codec_name = NULL;
+static const char *subtitle_codec_name = NULL;
+static const char *video_codec_name = NULL;
 
 //音频
 static int64_t audio_callback_time;
@@ -307,6 +318,12 @@ static Frame *frame_queue_peek_last(FrameQueue *f)
     return &f->queue[f->rindex];
 }
 
+static void frame_queue_unref_item(Frame *vp)
+{
+    av_frame_unref(vp->frame);
+    avsubtitle_free(&vp->sub);
+}
+
 static void frame_queue_next(FrameQueue *f)
 {
     if (f->keep_last && !f->rindex_shown) {
@@ -360,12 +377,6 @@ static Frame *frame_queue_peek_readable(FrameQueue *f)
         return NULL;
 
     return &f->queue[(f->rindex + f->rindex_shown) % f->max_size];
-}
-
-static void frame_queue_unref_item(Frame *vp)
-{
-    av_frame_unref(vp->frame);
-    avsubtitle_free(&vp->sub);
 }
 
 static void frame_queue_destory(FrameQueue *f)
@@ -511,6 +522,7 @@ static void stream_component_close(VideoState *is, int stream_index)
 
     if (stream_index < 0 || stream_index >= ic->nb_streams)
         return;
+    
     codecpar = ic->streams[stream_index]->codecpar;
 
     switch (codecpar->codec_type) {
@@ -523,12 +535,15 @@ static void stream_component_close(VideoState *is, int stream_index)
         is->audio_buf1_size = 0;
         is->audio_buf = NULL;
 
+#if RDFT
         if (is->rdft) {
             av_rdft_end(is->rdft);
             av_freep(&is->rdft_data);
             is->rdft = NULL;
             is->rdft_bits = 0;
         }
+#endif
+        
         break;
     case AVMEDIA_TYPE_VIDEO:
         decoder_abort(&is->viddec, &is->pictq);
@@ -640,12 +655,6 @@ static void init_clock(Clock *c, int *queue_serial)
     set_clock(c, NAN, -1);
 }
 
-static void set_clock_speed(Clock *c, double speed)
-{
-    set_clock(c, get_clock(c), c->serial);
-    c->speed = speed;
-}
-
 static double get_clock(Clock *c)
 {
     if (*c->queue_serial != c->serial)
@@ -658,9 +667,15 @@ static double get_clock(Clock *c)
     }
 }
 
+static void set_clock_speed(Clock *c, double speed)
+{
+    set_clock(c, get_clock(c), c->serial);
+    c->speed = speed;
+}
+
 static void check_external_clock_speed(VideoState *is) {
-   if (is->video_stream >= 0 && is->videoq.nb_packets <= EXTERNAL_CLOCK_MIN_FRAMES ||
-       is->audio_stream >= 0 && is->audioq.nb_packets <= EXTERNAL_CLOCK_MIN_FRAMES) {
+   if ( (is->video_stream >= 0 && is->videoq.nb_packets <= EXTERNAL_CLOCK_MIN_FRAMES) ||
+        (is->audio_stream >= 0 && is->audioq.nb_packets <= EXTERNAL_CLOCK_MIN_FRAMES) ) {
        set_clock_speed(&is->extclk, FFMAX(EXTERNAL_CLOCK_SPEED_MIN, is->extclk.speed - EXTERNAL_CLOCK_SPEED_STEP));
    } else if ((is->video_stream < 0 || is->videoq.nb_packets > EXTERNAL_CLOCK_MAX_FRAMES) &&
               (is->audio_stream < 0 || is->audioq.nb_packets > EXTERNAL_CLOCK_MAX_FRAMES)) {
@@ -670,6 +685,22 @@ static void check_external_clock_speed(VideoState *is) {
        if (speed != 1.0)
            set_clock_speed(&is->extclk, speed + EXTERNAL_CLOCK_SPEED_STEP * (1.0 - speed) / fabs(1.0 - speed));
    }
+}
+
+static int get_master_sync_type(VideoState *is) {
+    if (is->av_sync_type == AV_SYNC_VIDEO_MASTER) {
+        if (is->video_st)
+            return AV_SYNC_VIDEO_MASTER;
+        else
+            return AV_SYNC_AUDIO_MASTER;
+    } else if (is->av_sync_type == AV_SYNC_AUDIO_MASTER) {
+        if (is->audio_st)
+            return AV_SYNC_AUDIO_MASTER;
+        else
+            return AV_SYNC_EXTERNAL_CLOCK;
+    } else {
+        return AV_SYNC_EXTERNAL_CLOCK;
+    }
 }
 
 static double get_master_clock(VideoState *is)
@@ -690,22 +721,6 @@ static double get_master_clock(VideoState *is)
     return val;
 }
 
-static int get_master_sync_type(VideoState *is) {
-    if (is->av_sync_type == AV_SYNC_VIDEO_MASTER) {
-        if (is->video_st)
-            return AV_SYNC_VIDEO_MASTER;
-        else
-            return AV_SYNC_AUDIO_MASTER;
-    } else if (is->av_sync_type == AV_SYNC_AUDIO_MASTER) {
-        if (is->audio_st)
-            return AV_SYNC_AUDIO_MASTER;
-        else
-            return AV_SYNC_EXTERNAL_CLOCK;
-    } else {
-        return AV_SYNC_EXTERNAL_CLOCK;
-    }
-}
-
 static void sync_clock_to_slave(Clock *c, Clock *slave)
 {
     double clock = get_clock(c);
@@ -713,8 +728,6 @@ static void sync_clock_to_slave(Clock *c, Clock *slave)
     if (!isnan(slave_clock) && (isnan(clock) || fabs(clock - slave_clock) > AV_NOSYNC_THRESHOLD))
         set_clock(c, slave_clock, slave->serial);
 }
-
-
 
 static int synchronize_audio(VideoState *is, int nb_samples)
 {
@@ -1061,6 +1074,43 @@ static int get_video_frame(VideoState *is, AVFrame *frame)
     return got_picture;
 }
 
+static void calculate_display_rect(SDL_Rect *rect, int scr_xleft, int scr_ytop, int scr_width, int scr_height, int pic_width, int pic_height, AVRational pic_sar)
+{
+    AVRational aspect_ratio = pic_sar;
+    int64_t width, height, x, y;
+
+    if (av_cmp_q(aspect_ratio, av_make_q(0, 1)) <= 0)
+        aspect_ratio = av_make_q(1, 1);
+
+    aspect_ratio = av_mul_q(aspect_ratio, av_make_q(pic_width, pic_height));
+
+    /* XXX: we suppose the screen has a 1.0 pixel ratio */
+    height = scr_height;
+    width = av_rescale(height, aspect_ratio.num, aspect_ratio.den) & ~1;
+    if (width > scr_width) {
+        width = scr_width;
+        height = av_rescale(width, aspect_ratio.den, aspect_ratio.num) & ~1;
+    }
+    x = (scr_width - width) / 2;
+    y = (scr_height - height) / 2;
+    rect->x = scr_xleft + x;
+    rect->y = scr_ytop  + y;
+    rect->w = FFMAX((int)width,  1);
+    rect->h = FFMAX((int)height, 1);
+}
+
+static void set_default_window_size(int width, int height, AVRational sar)
+{
+    SDL_Rect rect;
+    int max_width  = screen_width  ? screen_width  : INT_MAX;
+    int max_height = screen_height ? screen_height : INT_MAX;
+    if (max_width == INT_MAX && max_height == INT_MAX)
+        max_height = height;
+    calculate_display_rect(&rect, 0, 0, max_width, max_height, width, height, sar);
+    default_width  = rect.w;
+    default_height = rect.h;
+}
+
 static int queue_picture(VideoState *is, AVFrame *src_frame, double pts, double duration, int64_t pos, int serial)
 {
     Frame *vp;
@@ -1319,9 +1369,18 @@ static int stream_component_open(VideoState *is, int stream_index)
     codec = avcodec_find_decoder(avctx->codec_id);
 
     switch(avctx->codec_type){
-        case AVMEDIA_TYPE_AUDIO   : is->last_audio_stream    = stream_index; forced_codec_name =    audio_codec_name; break;
-        case AVMEDIA_TYPE_SUBTITLE: is->last_subtitle_stream = stream_index; forced_codec_name = subtitle_codec_name; break;
-        case AVMEDIA_TYPE_VIDEO   : is->last_video_stream    = stream_index; forced_codec_name =    video_codec_name; break;
+        case AVMEDIA_TYPE_AUDIO   : 
+            is->last_audio_stream    = stream_index;
+            forced_codec_name =    audio_codec_name;
+            break;
+        case AVMEDIA_TYPE_SUBTITLE:
+            is->last_subtitle_stream = stream_index;
+            forced_codec_name = subtitle_codec_name;
+            break;
+        case AVMEDIA_TYPE_VIDEO   :
+            is->last_video_stream    = stream_index;
+            forced_codec_name =    video_codec_name;
+            break;
     }
     
     if (forced_codec_name)
@@ -1458,7 +1517,7 @@ static int stream_has_enough_packets(AVStream *st, int stream_id, PacketQueue *q
     return stream_id < 0 ||
            queue->abort_request ||
            (st->disposition & AV_DISPOSITION_ATTACHED_PIC) ||
-           queue->nb_packets > MIN_FRAMES && (!queue->duration || av_q2d(st->time_base) * queue->duration > 1.0);
+           (queue->nb_packets > MIN_FRAMES && (!queue->duration || av_q2d(st->time_base) * queue->duration > 1.0));
 }
 
 static int decode_interrupt_cb(void *ctx)
@@ -1561,7 +1620,7 @@ static int read_thread(void *arg)
     int pkt_in_play_range = 0;
     AVDictionaryEntry *t;
     SDL_mutex *wait_mutex = SDL_CreateMutex();
-    int scan_all_pmts_set = 0;
+    //int scan_all_pmts_set = 0;
     int64_t pkt_ts;
 
     if (!wait_mutex) {
@@ -1998,6 +2057,19 @@ static void update_video_pts(VideoState *is, double pts, int64_t pos, int serial
     sync_clock_to_slave(&is->extclk, &is->vidclk);
 }
 
+#if 0
+static void fill_rectangle(int x, int y, int w, int h)
+{
+    SDL_Rect rect;
+    rect.x = x;
+    rect.y = y;
+    rect.w = w;
+    rect.h = h;
+    if (w && h)
+        SDL_RenderFillRect(renderer, &rect);
+}
+#endif
+
 static int realloc_texture(SDL_Texture **texture, Uint32 new_format, int new_width, int new_height, SDL_BlendMode blendmode, int init_texture)
 {
     Uint32 format;
@@ -2108,43 +2180,6 @@ static void set_sdl_yuv_conversion_mode(AVFrame *frame)
     }
     SDL_SetYUVConversionMode(mode);
 #endif
-}
-
-static void calculate_display_rect(SDL_Rect *rect, int scr_xleft, int scr_ytop, int scr_width, int scr_height, int pic_width, int pic_height, AVRational pic_sar)
-{
-    AVRational aspect_ratio = pic_sar;
-    int64_t width, height, x, y;
-
-    if (av_cmp_q(aspect_ratio, av_make_q(0, 1)) <= 0)
-        aspect_ratio = av_make_q(1, 1);
-
-    aspect_ratio = av_mul_q(aspect_ratio, av_make_q(pic_width, pic_height));
-
-    /* XXX: we suppose the screen has a 1.0 pixel ratio */
-    height = scr_height;
-    width = av_rescale(height, aspect_ratio.num, aspect_ratio.den) & ~1;
-    if (width > scr_width) {
-        width = scr_width;
-        height = av_rescale(width, aspect_ratio.den, aspect_ratio.num) & ~1;
-    }
-    x = (scr_width - width) / 2;
-    y = (scr_height - height) / 2;
-    rect->x = scr_xleft + x;
-    rect->y = scr_ytop  + y;
-    rect->w = FFMAX((int)width,  1);
-    rect->h = FFMAX((int)height, 1);
-}
-
-static void set_default_window_size(int width, int height, AVRational sar)
-{
-    SDL_Rect rect;
-    int max_width  = screen_width  ? screen_width  : INT_MAX;
-    int max_height = screen_height ? screen_height : INT_MAX;
-    if (max_width == INT_MAX && max_height == INT_MAX)
-        max_height = height;
-    calculate_display_rect(&rect, 0, 0, max_width, max_height, width, height, sar);
-    default_width  = rect.w;
-    default_height = rect.h;
 }
 
 static int video_open(VideoState *is)
