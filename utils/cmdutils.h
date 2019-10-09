@@ -34,6 +34,13 @@
 #undef main /* We don't want SDL to override our main() */
 #endif
 
+
+enum show_muxdemuxers {
+    SHOW_DEFAULT,
+    SHOW_DEMUXERS,
+    SHOW_MUXERS,
+};
+
 /**
  * program name, defined by the program for show_version().
  */

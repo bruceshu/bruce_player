@@ -66,22 +66,19 @@
 #include <windows.h>
 #endif
 
+#if 0 //暂时注释
 static int init_report(const char *env);
+#endif
 
 AVDictionary *sws_dict;
 AVDictionary *swr_opts;
 AVDictionary *format_opts, *codec_opts, *resample_opts;
 
-//static FILE *report_file;
-//static int report_file_level = AV_LOG_DEBUG;
+static FILE *report_file;
+static int report_file_level = AV_LOG_DEBUG;
 int hide_banner = 0;
 
-enum show_muxdemuxers {
-    SHOW_DEFAULT,
-    SHOW_DEMUXERS,
-    SHOW_MUXERS,
-};
-
+#if 0 //暂时注释
 void init_opts(void)
 {
     av_dict_set(&sws_dict, "flags", "bicubic", 0);
@@ -125,6 +122,7 @@ void init_dynload(void)
     SetDllDirectory("");
 #endif
 }
+#endif
 
 static void (*program_exit)(int ret);
 
@@ -132,6 +130,7 @@ void register_exit(void (*cb)(int ret))
 {
     program_exit = cb;
 }
+
 
 void exit_program(int ret)
 {
@@ -141,6 +140,7 @@ void exit_program(int ret)
     exit(ret);
 }
 
+#if 0 //暂时注释
 double parse_number_or_die(const char *context, const char *numstr, int type,
                            double min, double max)
 {
@@ -1905,11 +1905,11 @@ static void show_help_muxer(const char *name)
     if (fmt->priv_class)
         show_help_children(fmt->priv_class, AV_OPT_FLAG_ENCODING_PARAM);
 }
+#endif
 
 #if CONFIG_AVFILTER
 static void show_help_filter(const char *name)
 {
-#if CONFIG_AVFILTER
     const AVFilter *f = avfilter_get_by_name(name);
     int i, count;
 
@@ -1955,13 +1955,11 @@ static void show_help_filter(const char *name)
                                           AV_OPT_FLAG_AUDIO_PARAM);
     if (f->flags & AVFILTER_FLAG_SUPPORT_TIMELINE)
         printf("This filter has support for timeline through the 'enable' option.\n");
-#else
-    av_log(NULL, AV_LOG_ERROR, "Build without libavfilter; "
-           "can not to satisfy request\n");
-#endif
+
 }
 #endif
 
+#if 0 //暂时注释
 static void show_help_bsf(const char *name)
 {
     const AVBitStreamFilter *bsf = av_bsf_get_by_name(name);
@@ -2077,6 +2075,7 @@ FILE *get_preset_file(char *filename, size_t filename_size,
 
     return f;
 }
+#endif
 
 int check_stream_specifier(AVFormatContext *s, AVStream *st, const char *spec)
 {
@@ -2153,8 +2152,7 @@ AVDictionary **setup_find_stream_info_opts(AVFormatContext *s,
         return NULL;
     opts = av_mallocz_array(s->nb_streams, sizeof(*opts));
     if (!opts) {
-        av_log(NULL, AV_LOG_ERROR,
-               "Could not alloc memory for stream options.\n");
+        //av_log(NULL, AV_LOG_ERROR, "Could not alloc memory for stream options.\n");
         return NULL;
     }
     for (i = 0; i < s->nb_streams; i++)
@@ -2163,6 +2161,7 @@ AVDictionary **setup_find_stream_info_opts(AVFormatContext *s,
     return opts;
 }
 
+#if 0 //暂时注释
 void *grow_array(void *array, int elem_size, int *size, int new_size)
 {
     if (new_size >= INT_MAX / elem_size) {
@@ -2200,6 +2199,7 @@ double get_rotation(AVStream *st)
 
     return theta;
 }
+#endif
 
 #if CONFIG_AVDEVICE
 static int print_device_sources(AVInputFormat *fmt, AVDictionary *opts)
