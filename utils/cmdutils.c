@@ -790,7 +790,7 @@ int split_commandline(OptionParseContext *octx, int argc, char *argv[],
 do {                                                                           \
     arg = argv[optindex++];                                                    \
     if (!arg) {                                                                \
-        //av_log(NULL, AV_LOG_ERROR, "Missing argument for option '%s'.\n", opt);\
+        av_log(NULL, AV_LOG_ERROR, "Missing argument for option '%s'.\n", opt);\
         return AVERROR(EINVAL);                                                \
     }                                                                          \
 } while (0)
@@ -2114,7 +2114,7 @@ AVDictionary *filter_codec_opts(AVDictionary *opts, enum AVCodecID codec_id,
         break;
     }
 
-    while (t = av_dict_get(opts, "", t, AV_DICT_IGNORE_SUFFIX)) {
+    while ((t = av_dict_get(opts, "", t, AV_DICT_IGNORE_SUFFIX))) {
         char *p = strchr(t->key, ':');
 
         /* check stream specification in opt name */
