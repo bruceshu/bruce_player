@@ -26,7 +26,7 @@
 .\#*
 /.config
 /.version
-/ffplay
+/player_out
 /ffprobe
 /config.asm
 /config.h
